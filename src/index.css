@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gradient-to-br from-gray-100 to-gray-300;
+}
+
+html.dark body {
+  @apply bg-gray-900 text-white;
+}
