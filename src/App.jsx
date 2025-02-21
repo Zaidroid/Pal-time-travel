@@ -1,4 +1,4 @@
-// src/App.jsx (with simplified prompt for testing)
+// src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import './index.css';
 
@@ -128,13 +128,14 @@ function App() {
                 : `صف يومًا في حياة ${personGender === 'Male' ? 'رجل' : 'امرأة'} فلسطيني${personGender === 'Male' ? '' : 'ة'} اسم${personGender === 'Male' ? 'ه' : 'ها'} ${personName}، عمر${personGender === 'Male' ? 'ه' : 'ها'} ${personAge} عامًا${hasOccupation ? `، ويعمل ${personOccupation}،` : ''} في ${location}، فلسطين في عام ${year}. قدم وصفًا فريدًا لا يُنسى، بصيغة المتكلم، عن حياته اليومية وثقافته وتجاربه، مع التركيز على السياق التاريخي لتلك السنة. تجنب التركيز على الجوانب الدينية إلا إذا كانت ذات صلة مباشرة بالروتين اليومي للشخص. اجعل السرد يتراوح بين 300 و 500 كلمة.`;
 
             const apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+            const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
             console.log("API URL:", apiUrl);
-            console.log("API Key:", import.meta.env.VITE_OPENROUTER_API_KEY);
+            console.log("API Key:", openRouterApiKey);
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
-                    "Authorization": `Bearer ${import.meta.env.VITE_OPENROUTER_API_KEY}`,
+                    "Authorization": `Bearer ${openRouterApiKey}`,
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
@@ -156,6 +157,7 @@ function App() {
                 // Try to parse as JSON, but fall back to the raw text if it fails
                 const errorData = await response.json().catch(() => ({ message: rawResponse }));
                 const errorMessage = errorData.error?.message || errorData.message || `HTTP error! status: ${response.status}`;
+                console.error("Detailed Error:", errorData); // More detailed error
                 throw new Error(errorMessage);
             }
 
@@ -189,14 +191,16 @@ function App() {
     const generateAudioElevenLabs = async (text) => {
         const voiceId = language === "en" ? "pNInz6obpgDQGcFmaJgB" : "ErXwobaYiN019PkySvjV"; // Adam for English, Arab for Arabic
         const apiURL = `/api/elevenlabs/text-to-speech/${voiceId}`; // Use the proxy
+        const elevenLabsApiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+
         console.log("ElevenLabs API URL:", apiURL);
-        console.log("ElevenLabs API Key:", import.meta.env.VITE_ELEVENLABS_API_KEY); //verify the key
+        console.log("ElevenLabs API Key:", elevenLabsApiKey); //verify the key
 
         try {
             const headers = {
                 'Accept': 'audio/mpeg',
                 'Content-Type': 'application/json',
-                'xi-api-key': import.meta.env.VITE_ELEVENLABS_API_KEY,
+                'xi-api-key': elevenLabsApiKey,
             };
             console.log("Request Headers:", headers); // Log the headers
 
@@ -220,6 +224,7 @@ function App() {
                 console.error("ElevenLabs API Error Response:", errorText);
                 const errorData = await response.json().catch(() => ({ message: errorText })); // Try to parse, fallback to raw
                 const errorMessage = errorData.detail?.message || errorData.message || `ElevenLabs API error! status: ${response.status}`;
+                console.error("Detailed Error:", errorData); // More detailed error.
                 throw new Error(errorMessage);
             }
 
