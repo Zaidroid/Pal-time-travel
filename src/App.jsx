@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/App.jsx (with simplified prompt for testing)
 import React, { useState, useEffect, useRef } from 'react';
 import './index.css';
 
@@ -109,6 +109,14 @@ function App() {
         } else {
             document.documentElement.classList.remove('dark');
         }
+
+        // Cleanup function to cancel any ongoing audio
+        return () => {
+          if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.src = ""; // Unload the audio
+          }
+        };
     }, [theme]);
 
 
@@ -130,7 +138,7 @@ function App() {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    "model": "google/gemini-2.0-flash-thinking-exp:free",
+                    "model": "google/gemini-2.0-pro-exp-02-05:free",
                     "messages": [
                         {
                             "role": "user",
@@ -180,35 +188,49 @@ function App() {
 
     const generateAudioElevenLabs = async (text) => {
         const voiceId = language === "en" ? "pNInz6obpgDQGcFmaJgB" : "ErXwobaYiN019PkySvjV"; // Adam for English, Arab for Arabic
+        const apiURL = `/api/elevenlabs/text-to-speech/${voiceId}`; // Use the proxy
+        console.log("ElevenLabs API URL:", apiURL);
+        console.log("ElevenLabs API Key:", import.meta.env.VITE_ELEVENLABS_API_KEY); //verify the key
 
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-            method: 'POST',
-            headers: {
+        try {
+            const headers = {
                 'Accept': 'audio/mpeg',
                 'Content-Type': 'application/json',
                 'xi-api-key': import.meta.env.VITE_ELEVENLABS_API_KEY,
-            },
-            body: JSON.stringify({
-                "model_id": "eleven_multilingual_v2",
-                "text": text,
-                "voice_settings": {
-                    "similarity_boost": 0.75,
-                    "stability": 0.5,
-                    "style": 0.25,
-                    "use_speaker_boost": true
-                }
-            })
-        });
+            };
+            console.log("Request Headers:", headers); // Log the headers
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            const errorMessage = errorData.detail?.message || errorData.message || `ElevenLabs API error! status: ${response.status}`;
-            throw new Error(errorMessage);
+            const response = await fetch(apiURL, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    "model_id": "eleven_multilingual_v2",
+                    "text": language === "en" ? "test" : "اختبار", // Simplified prompt
+                    "voice_settings": {
+                        "similarity_boost": 0.75,
+                        "stability": 0.5,
+                        "style": 0.25,
+                        "use_speaker_boost": true
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text(); // Get the raw text first
+                console.error("ElevenLabs API Error Response:", errorText);
+                const errorData = await response.json().catch(() => ({ message: errorText })); // Try to parse, fallback to raw
+                const errorMessage = errorData.detail?.message || errorData.message || `ElevenLabs API error! status: ${response.status}`;
+                throw new Error(errorMessage);
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            return audioUrl;
+
+        } catch (error) {
+            console.error("Error in generateAudioElevenLabs:", error);
+            throw error; // Re-throw to be caught in handleTravel
         }
-
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        return audioUrl;
     };
 
 
@@ -275,8 +297,10 @@ function App() {
         if (audioRef.current) {
             if (isPlaying) {
                 audioRef.current.pause();
+                setIsPlaying(false);
             } else {
                 audioRef.current.play();
+                setIsPlaying(true);
             }
         }
     };
@@ -496,76 +520,77 @@ function App() {
                         </div>
                     )}
 
-                    {/* Audio Player Controls */}
-                    {audioUrl && (
-                        <div className="mt-6">
-                            <h2 className="text-2xl font-bold text-palestine-black dark:text-palestine-white mb-4">{translations[language].audioTitle}</h2>
-                            <div className="flex items-center space-x-4">
-                                <button
-                                    onClick={handlePlayPause}
-                                    className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
-                                >
-                                    {isPlaying ? translations[language].pauseAudio : translations[language].playAudio}
-                                </button>
-                                <button
-                                    onClick={handleStop}
-                                    className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
-                                >
-                                  {translations[language].stopAudio}
-                                </button>
-                                <button
-                                    onClick={handleMuteToggle}
-                                    className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
-                                >
-                                  {isMuted ? "Unmute" : "Mute"}
-                                </button>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.01"
-                                    value={volume}
-                                    onChange={handleVolumeChange}
-                                    className="w-32"
-                                />
-                                 <input
-                                    type="range"
-                                    min="0.5"
-                                    max="2"
-                                    step="0.1"
-                                    value={playbackRate}
-                                    onChange={handlePlaybackRateChange}
-                                    className="w-32"
-                                />
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max={duration}
-                                    step="0.1"
-                                    value={currentTime}
-                                    onChange={handleSeek}
-                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                                />
-                                <div>
-                                    {formatTime(currentTime)} / {formatTime(duration)}
-                                </div>
-                            </div>
-                            <audio
-                                ref={audioRef}
-                                src={audioUrl}
-                                onPlay={() => setIsPlaying(true)}
-                                onPause={() => setIsPlaying(false)}
-                                onEnded={() => setIsPlaying(false)}
-                                onTimeUpdate={() => setCurrentTime(audioRef.current.currentTime)}
-                                onLoadedMetadata={() => setDuration(audioRef.current.duration)}
-                                // No 'hidden' attribute needed; controls are sufficient
-                            />
-                        </div>
-                    )}
+          {/* Audio Player Controls */}
+          {audioUrl && (
+            <div className="mt-6">
+              <h2 className="text-2xl font-bold text-palestine-black dark:text-palestine-white mb-4">{translations[language].audioTitle}</h2>
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={handlePlayPause}
+                  className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
+                >
+                  {isPlaying ? translations[language].pauseAudio : translations[language].playAudio}
+                </button>
+                <button
+                  onClick={handleStop}
+                  className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
+                >
+                  {translations[language].stopAudio}
+                </button>
+                <button
+                  onClick={handleMuteToggle}
+                  className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
+                >
+                  {isMuted ? "Unmute" : "Mute"}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={volume}
+                  onChange={handleVolumeChange}
+                  className="w-32"
+                />
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={playbackRate}
+                  onChange={handlePlaybackRateChange}
+                  className="w-32"
+                />
+                <input
+                    type="range"
+                    min="0"
+                    max={duration}
+                    step="0.1"
+                    value={currentTime}
+                    onChange={handleSeek}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                />
+
+                <div>
+                  {formatTime(currentTime)} / {formatTime(duration)}
                 </div>
-            </main>
+              </div>
+              <audio
+                ref={audioRef}
+                src={audioUrl}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
+                onTimeUpdate={() => setCurrentTime(audioRef.current.currentTime)}
+                onLoadedMetadata={() => setDuration(audioRef.current.duration)}
+                // No 'hidden' attribute needed; controls are sufficient
+              />
+            </div>
+          )}
         </div>
-    );
+      </main>
+    </div>
+  );
 }
 
 export default App;
