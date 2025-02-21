@@ -109,28 +109,20 @@ function App() {
         } else {
             document.documentElement.classList.remove('dark');
         }
-
-        // Cleanup function to cancel any ongoing audio
-        return () => {
-          if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.src = ""; // Unload the audio
-          }
-        };
     }, [theme]);
 
+    // --- API Interaction Functions ---
 
     const generateNarrative = async (year, location, personName, personAge, personOccupation, personGender) => {
         try {
             const hasOccupation = personOccupation && personOccupation.trim() !== '';
             const prompt = language === 'en'
-                ? `Describe a day in the life of a Palestinian ${personGender} named ${personName}, ${personAge} years old${hasOccupation ? `, who works as ${personOccupation},` : ''} in ${location}, Palestine in the year ${year}. Provide a unique and memorable, first-person account of their daily life, culture, and experiences, focusing on the historical context of that year. Avoid focusing on religious aspects unless directly relevant to their daily routine. Keep the narrative between 300-500 words.`
-                : `صف يومًا في حياة ${personGender === 'Male' ? 'رجل' : 'امرأة'} فلسطيني${personGender === 'Male' ? '' : 'ة'} اسم${personGender === 'Male' ? 'ه' : 'ها'} ${personName}، عمر${personGender === 'Male' ? 'ه' : 'ها'} ${personAge} عامًا${hasOccupation ? `، ويعمل ${personOccupation}،` : ''} في ${location}، فلسطين في عام ${year}. قدم وصفًا فريدًا لا يُنسى، بصيغة المتكلم، عن حياته اليومية وثقافته وتجاربه، مع التركيز على السياق التاريخي لتلك السنة. تجنب التركيز على الجوانب الدينية إلا إذا كانت ذات صلة مباشرة بالروتين اليومي للشخص. اجعل السرد يتراوح بين 300 و 500 كلمة.`;
+                ? `Describe a day in the life of a Palestinian ${personGender} named ${personName}, ${personAge} years old${hasOccupation ? `, who works as ${personOccupation},` : ''} in ${location}, Palestine in the year ${year}. Provide a unique and memorable, first-person account of their daily life, culture, and experiences, focusing on the historical context of that year. Avoid focusing on religious aspects unless directly relevant to their daily routine. Keep the narrative **under 300 words.**`
+                : `صف يومًا في حياة ${personGender === 'Male' ? 'رجل' : 'امرأة'} فلسطيني${personGender === 'Male' ? '' : 'ة'} اسم${personGender === 'Male' ? 'ه' : 'ها'} ${personName}، عمر${personGender === 'Male' ? 'ه' : 'ها'} ${personAge} عامًا${hasOccupation ? `، ويعمل ${personOccupation}،` : ''} في ${location}، فلسطين في عام ${year}. قدم وصفًا فريدًا لا يُنسى، بصيغة المتكلم، عن حياته اليومية وثقافته وتجاربه، مع التركيز على السياق التاريخي لتلك السنة. تجنب التركيز على الجوانب الدينية إلا إذا كانت ذات صلة مباشرة بالروتين اليومي للشخص. اجعل السرد **أقل من 300 كلمة.**`;
 
-            const apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+            // Use the proxy path
+            const apiUrl = "/api/openrouter/chat/completions";
             const openRouterApiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
-            console.log("API URL:", apiUrl);
-            console.log("API Key:", openRouterApiKey);
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -140,45 +132,33 @@ function App() {
                 },
                 body: JSON.stringify({
                     "model": "google/gemini-2.0-pro-exp-02-05:free",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
+                    "messages": [{ "role": "user", "content": prompt }]
                 })
             });
 
-            // Log the raw response text:
-            const rawResponse = await response.text();
-            console.log("Raw API Response:", rawResponse);
-
             if (!response.ok) {
-                // Try to parse as JSON, but fall back to the raw text if it fails
-                const errorData = await response.json().catch(() => ({ message: rawResponse }));
-                const errorMessage = errorData.error?.message || errorData.message || `HTTP error! status: ${response.status}`;
-                console.error("Detailed Error:", errorData); // More detailed error
-                throw new Error(errorMessage);
+                const errorData = await response.json().catch(() => ({ message: "Failed to parse error response" }));
+                throw new Error(`OpenRouter API error: ${errorData.message || response.status}`);
             }
 
-
-            const data = JSON.parse(rawResponse); // Parse the raw response
-            console.log("API Response Data:", data);
-
-
-            if (!data || !data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-                throw new Error("Invalid API response format: 'choices' array is missing or empty.");
+            const data = await response.json();
+            if (!data?.choices?.[0]?.message?.content) {
+                throw new Error("Invalid API response format from OpenRouter");
             }
 
-            if (!data.choices[0].message || typeof data.choices[0].message.content !== 'string') {
-                throw new Error("Invalid API response format: 'message.content' is missing or not a string.");
+            let narrativeText = data.choices[0].message.content;
+
+            // Client-side word count check
+            const words = narrativeText.split(/\s+/);
+            if (words.length > 300) {
+                narrativeText = words.slice(0, 300).join(' ') + '...';
             }
 
-
-            return data.choices[0].message.content;
+            return narrativeText;
 
         } catch (error) {
             console.error("Error fetching narrative:", error);
+            setError(`Error generating narrative: ${error.message}`);
             throw error;
         }
     };
@@ -188,94 +168,83 @@ function App() {
         return "";
     };
 
-    const generateAudioElevenLabs = async (text) => {
-        const voiceId = language === "en" ? "pNInz6obpgDQGcFmaJgB" : "ErXwobaYiN019PkySvjV"; // Adam for English, Arab for Arabic
-        const apiURL = `/api/elevenlabs/text-to-speech/${voiceId}`; // Use the proxy
-        const elevenLabsApiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
 
-        console.log("ElevenLabs API URL:", apiURL);
-        console.log("ElevenLabs API Key:", elevenLabsApiKey); //verify the key
+  const generateAudioMimic = async (text) => {
+    if (!text) {
+      console.warn("generateAudioMimic called with empty text.");
+      return '';
+    }
 
-        try {
-            const headers = {
-                'Accept': 'audio/mpeg',
-                'Content-Type': 'application/json',
-                'xi-api-key': elevenLabsApiKey,
-            };
-            console.log("Request Headers:", headers); // Log the headers
+    const apiURL = `/api/mimic/api/tts?text=${encodeURIComponent(text)}`;
+    console.log("Sending to Mimic:", apiURL); // Log the URL being sent
 
-            const response = await fetch(apiURL, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    "model_id": "eleven_multilingual_v2",
-                    "text": language === "en" ? "test" : "اختبار", // Simplified prompt
-                    "voice_settings": {
-                        "similarity_boost": 0.75,
-                        "stability": 0.5,
-                        "style": 0.25,
-                        "use_speaker_boost": true
-                    }
-                })
-            });
+    try {
+      const response = await fetch(apiURL);
 
-            if (!response.ok) {
-                const errorText = await response.text(); // Get the raw text first
-                console.error("ElevenLabs API Error Response:", errorText);
-                const errorData = await response.json().catch(() => ({ message: errorText })); // Try to parse, fallback to raw
-                const errorMessage = errorData.detail?.message || errorData.message || `ElevenLabs API error! status: ${response.status}`;
-                console.error("Detailed Error:", errorData); // More detailed error.
-                throw new Error(errorMessage);
-            }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Mimic error response:", errorText); // Log Mimic's error
+        throw new Error(`Mimic TTS API error: ${errorText || response.status}`);
+      }
 
-            const audioBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            return audioUrl;
+      const audioBlob = await response.blob();
+      return URL.createObjectURL(audioBlob);
 
-        } catch (error) {
-            console.error("Error in generateAudioElevenLabs:", error);
-            throw error; // Re-throw to be caught in handleTravel
-        }
-    };
+    } catch (error) {
+      console.error("Error in generateAudioMimic:", error);
+      setError(`Error generating audio: ${error.message}`);
+      throw error;
+    }
+  };
 
 
+    // --- Main Travel Logic ---
 
     const handleTravel = async () => {
         setLoading(true);
+        setError(null);
         setNarrative('');
         setImage('');
-        setError(null);
+        setAudioUrl('');
         setIsPlaying(false);
-        setName('');
-        setAge('');
-        setOccupation('');
-        setGender('');
-        setCurrentTime(0);
-        setDuration(0);
-        setAudioUrl(''); // Clear previous audio URL
 
         if (audioRef.current) {
-            audioRef.current.pause(); // Pause any existing audio
-            audioRef.current.currentTime = 0; // Reset time
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
         }
-
 
         try {
             const generatedNarrative = await generateNarrative(year, language === 'ar' ? arabicLocations[locations.indexOf(location)] : location, name, age, occupation, gender);
             setNarrative(generatedNarrative);
+
             const generatedImage = generateImage(year, location);
             setImage(generatedImage);
 
-            // Generate audio using ElevenLabs
-            const audioUrl = await generateAudioElevenLabs(generatedNarrative);
+            const audioUrl = await generateAudioMimic(generatedNarrative);
             setAudioUrl(audioUrl);
 
         } catch (error) {
-            setError(error.message);
+            // Error handling
         } finally {
             setLoading(false);
         }
     };
+
+    // --- useEffect for Audio Updates ---
+    useEffect(() => {
+      if (narrative) {
+        generateAudioMimic(narrative)
+          .then(newAudioUrl => {
+            setAudioUrl(newAudioUrl);
+            if (audioRef.current) {
+              audioRef.current.src = newAudioUrl;
+            }
+          })
+          .catch(error => {
+            console.error("Error updating audio:", error);
+          });
+      }
+    }, [narrative]);
 
 
     const handleRandomJourney = () => {
@@ -297,16 +266,15 @@ function App() {
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // --- Event Handlers for Audio ---
+    // --- Audio Event Handlers ---
     const handlePlayPause = () => {
         if (audioRef.current) {
             if (isPlaying) {
                 audioRef.current.pause();
-                setIsPlaying(false);
             } else {
                 audioRef.current.play();
-                setIsPlaying(true);
             }
+            setIsPlaying(!isPlaying);
         }
     };
 
@@ -339,7 +307,7 @@ function App() {
         const newMutedState = !isMuted;
         setIsMuted(newMutedState);
         if (audioRef.current) {
-            audioRef.current.muted = newMutedState; // Use the built-in muted property
+            audioRef.current.muted = newMutedState;
         }
     };
 
@@ -525,77 +493,77 @@ function App() {
                         </div>
                     )}
 
-          {/* Audio Player Controls */}
-          {audioUrl && (
-            <div className="mt-6">
-              <h2 className="text-2xl font-bold text-palestine-black dark:text-palestine-white mb-4">{translations[language].audioTitle}</h2>
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={handlePlayPause}
-                  className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
-                >
-                  {isPlaying ? translations[language].pauseAudio : translations[language].playAudio}
-                </button>
-                <button
-                  onClick={handleStop}
-                  className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
-                >
-                  {translations[language].stopAudio}
-                </button>
-                <button
-                  onClick={handleMuteToggle}
-                  className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
-                >
-                  {isMuted ? "Unmute" : "Mute"}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={handleVolumeChange}
-                  className="w-32"
-                />
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={playbackRate}
-                  onChange={handlePlaybackRateChange}
-                  className="w-32"
-                />
-                <input
-                    type="range"
-                    min="0"
-                    max={duration}
-                    step="0.1"
-                    value={currentTime}
-                    onChange={handleSeek}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                />
+                    {/* Audio Player Controls */}
+                    {audioUrl && (
+                        <div className="mt-6">
+                            <h2 className="text-2xl font-bold text-palestine-black dark:text-palestine-white mb-4">{translations[language].audioTitle}</h2>
+                            <div className="flex items-center space-x-4">
+                                <button
+                                    onClick={handlePlayPause}
+                                    className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
+                                >
+                                    {isPlaying ? translations[language].pauseAudio : translations[language].playAudio}
+                                </button>
+                                <button
+                                    onClick={handleStop}
+                                    className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
+                                >
+                                    {translations[language].stopAudio}
+                                </button>
+                                <button
+                                    onClick={handleMuteToggle}
+                                    className="bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-palestine-black dark:text-palestine-white font-bold py-2 px-4 rounded"
+                                >
+                                    {isMuted ? "Unmute" : "Mute"}
+                                </button>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={volume}
+                                    onChange={handleVolumeChange}
+                                    className="w-32"
+                                />
+                                <input
+                                    type="range"
+                                    min="0.5"
+                                    max="2"
+                                    step="0.1"
+                                    value={playbackRate}
+                                    onChange={handlePlaybackRateChange}
+                                    className="w-32"
+                                />
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={duration}
+                                    step="0.1"
+                                    value={currentTime}
+                                    onChange={handleSeek}
+                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                />
 
-                <div>
-                  {formatTime(currentTime)} / {formatTime(duration)}
+                                <div>
+                                    {formatTime(currentTime)} / {formatTime(duration)}
+                                </div>
+                            </div>
+                            <audio
+                                ref={audioRef}
+                                src={audioUrl}
+                                onPlay={() => setIsPlaying(true)}
+                                onPause={() => setIsPlaying(false)}
+                                onEnded={() => {setIsPlaying(false); setCurrentTime(0);}}
+                                onTimeUpdate={() => setCurrentTime(audioRef.current.currentTime)}
+                                onLoadedMetadata={() => setDuration(audioRef.current.duration)}
+
+                            />
+                        </div>
+                    )}
                 </div>
-              </div>
-              <audio
-                ref={audioRef}
-                src={audioUrl}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onEnded={() => setIsPlaying(false)}
-                onTimeUpdate={() => setCurrentTime(audioRef.current.currentTime)}
-                onLoadedMetadata={() => setDuration(audioRef.current.duration)}
-                // No 'hidden' attribute needed; controls are sufficient
-              />
-            </div>
-          )}
+            </main>
         </div>
-      </main>
-    </div>
-  );
+    );
 }
 
 export default App;
